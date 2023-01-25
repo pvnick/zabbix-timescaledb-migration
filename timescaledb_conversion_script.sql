@@ -1,3 +1,12 @@
+/*
+  Migrate Zabbix history/trend tables to TimescaleDB with zero downtime.
+  Method: Create two new tables - a temp one which uses a trigger to duplicate new data coming in, and then a new table that 
+  we bulk insert existing data into in compressed chunks. Once the bulk inserts are finished, we append the incoming data 
+  that was received onto the new table and atomically swap the final result with the existing table.
+  
+  This script only targets the history_uint table since it is usually the largest; however, this same 
+*/
+
 SELECT 'Start - ' || now();
 
 /* helper function to convert intervals and timestamps to integer of seconds. time/interval should be provided as an argument */
@@ -42,7 +51,11 @@ SELECT create_hypertable('history_uint_new', 'clock', chunk_time_interval => pg_
 ALTER TABLE history_uint_new SET (
   timescaledb.compress,
   timescaledb.compress_segmentby='itemid',
-  timescaledb.compress_orderby='clock,ns'); /* note to self: compress_orderby is different from trand tables */
+  /* 
+  note: compress_orderby is different from trend tables. 
+  see https://github.com/zabbix/zabbix/blob/b2e7812ac54c5ef06d6f52b48ed324a79afc1d7d/src/zabbix_server/housekeeper/history_compress.c#L101 
+  */
+  timescaledb.compress_orderby='clock,ns'); 
 
 /* bulk insert data in compressed chunks to the new hypertable */
 SELECT 'Inserting first chunk - ' || now();
